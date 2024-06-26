@@ -91,12 +91,15 @@ namespace UnityScreenNavigator.Runtime.Core.Page
             foreach (var pageId in _orderedPageIds)
             {
                 var page = _pages[pageId];
-                var assetLoadHandle = _assetLoadHandles[pageId];
+
+                if (_assetLoadHandles.TryGetValue(pageId, out var assetLoadHandle))
+                {
+                    AssetLoader.Release(assetLoadHandle);
+                }
 
                 if (UnityScreenNavigatorSettings.Instance.CallCleanupWhenDestroy)
                     page.BeforeReleaseAndForget();
                 Destroy(page.gameObject);
-                AssetLoader.Release(assetLoadHandle);
             }
 
             _assetLoadHandles.Clear();
@@ -194,6 +197,25 @@ namespace UnityScreenNavigator.Runtime.Core.Page
         }
 
         /// <summary>
+        ///    Push new page.
+        /// </summary>
+        /// <typeparam name="TPage"></typeparam>
+        /// <param name="prefab"></param>
+        /// <param name="playAnimation"></param>
+        /// <param name="stack"></param>
+        /// <param name="pageId"></param>
+        /// <param name="loadAsync"></param>
+        /// <param name="onLoad"></param>
+        /// <returns></returns>
+        public AsyncProcessHandle Push<TPage>(GameObject prefab, bool playAnimation, bool stack = true, string pageId = null,
+                       bool loadAsync = true, Action<(string pageId, TPage page)> onLoad = null)
+            where TPage : Page
+        {
+            return CoroutineManager.Instance.Run(PushRoutine(typeof(TPage), prefab, playAnimation, stack,
+                               x => onLoad?.Invoke((x.pageId, (TPage)x.page)), loadAsync, pageId));
+        }
+
+        /// <summary>
         ///     Push new page.
         /// </summary>
         /// <param name="pageType"></param>
@@ -255,7 +277,7 @@ namespace UnityScreenNavigator.Runtime.Core.Page
                 var pageId = _orderedPageIds[i];
                 if (pageId == destinationPageId)
                     break;
-                
+
                 popCount++;
             }
 
@@ -264,6 +286,7 @@ namespace UnityScreenNavigator.Runtime.Core.Page
 
             return CoroutineManager.Instance.Run(PopRoutine(playAnimation, popCount));
         }
+
 
         private IEnumerator PushRoutine(Type pageType, string resourceKey, bool playAnimation, bool stack = true,
             Action<(string pageId, Page page)> onLoad = null, bool loadAsync = true, string pageId = null)
@@ -301,15 +324,22 @@ namespace UnityScreenNavigator.Runtime.Core.Page
             if (!assetLoadHandle.IsDone) yield return new WaitUntil(() => assetLoadHandle.IsDone);
 
             if (assetLoadHandle.Status == AssetLoadStatus.Failed) throw assetLoadHandle.OperationException;
+            var prefab = assetLoadHandle.Result;
 
-            var instance = Instantiate(assetLoadHandle.Result);
+            yield return StartCoroutine(PushRoutine(pageType, prefab, playAnimation, stack, onLoad, loadAsync, pageId));
+        }
+
+        IEnumerator PushRoutine(Type pageType, GameObject prefab, bool playAnimation, bool stack = true,
+            Action<(string pageId, Page page)> onLoad = null, bool loadAsync = true, string pageId = null)
+        {
+            var instance = Instantiate(prefab);
             if (!instance.TryGetComponent(pageType, out var c))
                 c = instance.AddComponent(pageType);
             var enterPage = (Page)c;
 
             if (pageId == null)
                 pageId = Guid.NewGuid().ToString();
-            _assetLoadHandles.Add(pageId, assetLoadHandle);
+            // _assetLoadHandles.Add(pageId, assetLoadHandle);
             onLoad?.Invoke((pageId, enterPage));
             var afterLoadHandle = enterPage.AfterLoad((RectTransform)transform);
             while (!afterLoadHandle.IsTerminated)
@@ -367,11 +397,11 @@ namespace UnityScreenNavigator.Runtime.Core.Page
                 var beforeReleaseHandle = exitPage.BeforeRelease();
                 while (!beforeReleaseHandle.IsTerminated) yield return null;
 
-                var handle = _assetLoadHandles[exitPageId];
-                AssetLoader.Release(handle);
+                // var handle = _assetLoadHandles[exitPageId];
+                // AssetLoader.Release(handle);
 
                 Destroy(exitPage.gameObject);
-                _assetLoadHandles.Remove(exitPageId);
+                // _assetLoadHandles.Remove(exitPageId);
             }
 
             _isActivePageStacked = stack;
@@ -495,10 +525,13 @@ namespace UnityScreenNavigator.Runtime.Core.Page
             {
                 var unusedPageId = unusedPageIds[i];
                 var unusedPage = unusedPages[i];
-                var loadHandle = _assetLoadHandles[unusedPageId];
+                if (_assetLoadHandles.TryGetValue(unusedPageId, out var loadHandle))
+                {
+                    AssetLoader.Release(loadHandle);
+                    _assetLoadHandles.Remove(unusedPageId);
+                }
+
                 Destroy(unusedPage.gameObject);
-                AssetLoader.Release(loadHandle);
-                _assetLoadHandles.Remove(unusedPageId);
             }
 
             _isActivePageStacked = true;

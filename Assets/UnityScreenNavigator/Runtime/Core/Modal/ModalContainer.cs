@@ -98,12 +98,14 @@ namespace UnityScreenNavigator.Runtime.Core.Modal
             foreach (var modalId in _orderedModalIds)
             {
                 var modal = _modals[modalId];
-                var assetLoadHandle = _assetLoadHandles[modalId];
 
+                if(_assetLoadHandles.TryGetValue(modalId, out var assetLoadHandle))
+                {
+                    AssetLoader.Release(assetLoadHandle);
+                }
                 if (UnityScreenNavigatorSettings.Instance.CallCleanupWhenDestroy)
                     modal.BeforeReleaseAndForget();
                 Destroy(modal.gameObject);
-                AssetLoader.Release(assetLoadHandle);
             }
 
             _assetLoadHandles.Clear();
@@ -234,6 +236,15 @@ namespace UnityScreenNavigator.Runtime.Core.Modal
                 x => onLoad?.Invoke((x.modalId, (TModal)x.modal)), loadAsync, modalId));
         }
 
+        public AsyncProcessHandle Push<TModal>(GameObject prefab, bool playAnimation, string modalId = null,
+            bool loadAsync = true, Action<(string modalId, TModal modal)> onLoad = null)
+            where TModal : Modal
+        {
+
+            return CoroutineManager.Instance.Run(PushRoutine<TModal>(typeof(TModal), prefab, playAnimation,
+                               x => onLoad?.Invoke((x.modalId, (TModal)x.modal)), loadAsync, modalId));
+        }
+
         /// <summary>
         ///     Pop modals.
         /// </summary>
@@ -305,18 +316,27 @@ namespace UnityScreenNavigator.Runtime.Core.Modal
 
             if (assetLoadHandle.Status == AssetLoadStatus.Failed) throw assetLoadHandle.OperationException;
 
+            var prefab = assetLoadHandle.Result;
+
+            yield return StartCoroutine(PushRoutine<Modal>(modalType, prefab, playAnimation, onLoad, loadAsync, modalId));
+        }
+
+        IEnumerator PushRoutine<TModal>(Type modalType, GameObject prefab, bool playAnimation,
+            Action<(string modalId, Modal modal)> onLoad = null, bool loadAsync = true, string modalId = null)
+            where TModal : Modal
+        {
             var backdrop = Instantiate(_backdropPrefab);
             backdrop.Setup((RectTransform)transform);
             Backdrops.Add(backdrop);
 
-            var instance = Instantiate(assetLoadHandle.Result);
+            var instance = Instantiate(prefab);
             if (!instance.TryGetComponent(modalType, out var c))
                 c = instance.AddComponent(modalType);
             var enterModal = (Modal)c;
 
             if (modalId == null)
                 modalId = Guid.NewGuid().ToString();
-            _assetLoadHandles.Add(modalId, assetLoadHandle);
+            // _assetLoadHandles.Add(modalId, assetLoadHandle);
             onLoad?.Invoke((modalId, enterModal));
             var afterLoadHandle = enterModal.AfterLoad((RectTransform)transform);
             while (!afterLoadHandle.IsTerminated)
@@ -490,10 +510,12 @@ namespace UnityScreenNavigator.Runtime.Core.Modal
             {
                 var unusedModalId = unusedModalIds[i];
                 var unusedModal = unusedModals[i];
-                var loadHandle = _assetLoadHandles[unusedModalId];
+                if (_assetLoadHandles.TryGetValue(unusedModalId, out var loadHandle))
+                {
+                    AssetLoader.Release(loadHandle);
+                    _assetLoadHandles.Remove(unusedModalId);
+                }
                 Destroy(unusedModal.gameObject);
-                AssetLoader.Release(loadHandle);
-                _assetLoadHandles.Remove(unusedModalId);
             }
 
             foreach (var unusedBackdrop in unusedBackdrops)
