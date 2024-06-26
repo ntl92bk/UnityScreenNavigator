@@ -76,7 +76,7 @@ namespace UnityScreenNavigator.Runtime.Core.Modal
         public bool Interactable
         {
             get => _canvasGroup.interactable;
-            set => _canvasGroup.interactable = value;
+            set { if (_canvasGroup != null) _canvasGroup.interactable = value; }
         }
 
         private void Awake()
@@ -109,7 +109,8 @@ namespace UnityScreenNavigator.Runtime.Core.Modal
             _assetLoadHandles.Clear();
             _orderedModalIds.Clear();
 
-            InstanceCacheByName.Remove(_name);
+            if (!string.IsNullOrWhiteSpace(_name))
+                InstanceCacheByName.Remove(_name);
             var keysToRemove = new List<int>();
             foreach (var cache in InstanceCacheByTransform)
                 if (Equals(cache.Value))
@@ -258,7 +259,7 @@ namespace UnityScreenNavigator.Runtime.Core.Modal
                 var modalId = _orderedModalIds[i];
                 if (modalId == destinationModalId)
                     break;
-                
+
                 popCount++;
             }
 
