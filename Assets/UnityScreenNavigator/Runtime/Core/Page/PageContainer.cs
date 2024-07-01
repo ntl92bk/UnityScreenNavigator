@@ -3,7 +3,6 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using UnityEngine.Assertions;
 using UnityEngine.UI;
 using UnityScreenNavigator.Runtime.Core.Modal;
 using UnityScreenNavigator.Runtime.Core.Shared;
@@ -269,22 +268,36 @@ namespace UnityScreenNavigator.Runtime.Core.Page
         /// <param name="playAnimation"></param>
         /// <param name="destinationPageId"></param>
         /// <returns></returns>
-        public AsyncProcessHandle Pop(bool playAnimation, string destinationPageId)
+        public AsyncProcessHandle Pop(bool playAnimation, string destinationPageId, bool includeDestination = false)
         {
-            var popCount = 0;
+            if (GetPopCount(destinationPageId, out var popCount))
+            {
+                if (includeDestination)
+                    popCount++;
+            }
+            else
+            {
+                throw new Exception($"The page with id '{destinationPageId}' is not found.");
+            }
+
+            return CoroutineManager.Instance.Run(PopRoutine(playAnimation, popCount));
+        }
+
+        private bool GetPopCount(string destinationModalId, out int popCount)
+        {
+            popCount = 0;
             for (var i = _orderedPageIds.Count - 1; i >= 0; i--)
             {
-                var pageId = _orderedPageIds[i];
-                if (pageId == destinationPageId)
-                    break;
+                var modalId = _orderedPageIds[i];
+                if (modalId == destinationModalId)
+                {
+                    return true;
+                }
 
                 popCount++;
             }
 
-            if (popCount == _orderedPageIds.Count)
-                throw new Exception($"The page with id '{destinationPageId}' is not found.");
-
-            return CoroutineManager.Instance.Run(PopRoutine(playAnimation, popCount));
+            return false;
         }
 
 
@@ -433,8 +446,6 @@ namespace UnityScreenNavigator.Runtime.Core.Page
 
         private IEnumerator PopRoutine(bool playAnimation, int popCount = 1)
         {
-            Assert.IsTrue(popCount >= 1);
-
             if (_pages.Count < popCount)
                 throw new InvalidOperationException(
                     "Cannot transition because the page count is less than the pop count.");

@@ -3,7 +3,6 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
-using UnityEngine.Assertions;
 using UnityEngine.UI;
 using UnityScreenNavigator.Runtime.Core.Page;
 using UnityScreenNavigator.Runtime.Core.Shared;
@@ -99,7 +98,7 @@ namespace UnityScreenNavigator.Runtime.Core.Modal
             {
                 var modal = _modals[modalId];
 
-                if(_assetLoadHandles.TryGetValue(modalId, out var assetLoadHandle))
+                if (_assetLoadHandles.TryGetValue(modalId, out var assetLoadHandle))
                 {
                     AssetLoader.Release(assetLoadHandle);
                 }
@@ -262,22 +261,41 @@ namespace UnityScreenNavigator.Runtime.Core.Modal
         /// <param name="playAnimation"></param>
         /// <param name="destinationModalId"></param>
         /// <returns></returns>
-        public AsyncProcessHandle Pop(bool playAnimation, string destinationModalId)
+        public AsyncProcessHandle Pop(bool playAnimation, string destinationModalId, bool includeDestination = false)
         {
-            var popCount = 0;
+            if (GetPopCount(destinationModalId, out var popCount))
+            {
+                if (includeDestination)
+                    popCount++;
+            }
+            else
+            {
+                throw new Exception($"The modal with id '{destinationModalId}' is not found.");
+            }
+
+            return CoroutineManager.Instance.Run(PopRoutine(playAnimation, popCount));
+        }
+
+        private bool GetPopCount(string destinationModalId, out int popCount)
+        {
+            popCount = 0;
             for (var i = _orderedModalIds.Count - 1; i >= 0; i--)
             {
                 var modalId = _orderedModalIds[i];
                 if (modalId == destinationModalId)
-                    break;
+                {
+                    return true;
+                }
 
                 popCount++;
             }
 
-            if (popCount == _orderedModalIds.Count)
-                throw new Exception($"The modal with id '{destinationModalId}' is not found.");
+            return false;
+        }
 
-            return CoroutineManager.Instance.Run(PopRoutine(playAnimation, popCount));
+        public AsyncProcessHandle PopAll(bool playAnimation)
+        {
+            return CoroutineManager.Instance.Run(PopRoutine(playAnimation, _orderedModalIds.Count));
         }
 
         private IEnumerator PushRoutine(Type modalType, string resourceKey, bool playAnimation,
@@ -408,8 +426,6 @@ namespace UnityScreenNavigator.Runtime.Core.Modal
 
         private IEnumerator PopRoutine(bool playAnimation, int popCount = 1)
         {
-            Assert.IsTrue(popCount >= 1);
-
             if (_orderedModalIds.Count < popCount)
                 throw new InvalidOperationException(
                     "Cannot transition because the modal count is less than the pop count.");
