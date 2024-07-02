@@ -300,6 +300,37 @@ namespace UnityScreenNavigator.Runtime.Core.Page
             return false;
         }
 
+        public AsyncProcessHandle PopAll(bool playAnimation)
+        {
+            return CoroutineManager.Instance.Run(PopRoutine(playAnimation, _orderedPageIds.Count));
+        }
+
+        public AsyncProcessHandle PopToTop(bool playAnimation)
+        {
+            return CoroutineManager.Instance.Run(PopRoutine(playAnimation, _orderedPageIds.Count - 1));
+        }
+
+        public void Clear()
+        {
+            for (var i = _orderedPageIds.Count - 1; i >= 0; i--)
+            {
+                var pageId = _orderedPageIds[i];
+                var page = _pages[pageId];
+
+                if (_assetLoadHandles.TryGetValue(pageId, out var assetLoadHandle))
+                {
+                    AssetLoader.Release(assetLoadHandle);
+                }
+
+                if (UnityScreenNavigatorSettings.Instance.CallCleanupWhenDestroy)
+                    page.BeforeReleaseAndForget();
+                Destroy(page.gameObject);
+            }
+
+            _assetLoadHandles.Clear();
+            _pages.Clear();
+            _orderedPageIds.Clear();
+        }
 
         private IEnumerator PushRoutine(Type pageType, string resourceKey, bool playAnimation, bool stack = true,
             Action<(string pageId, Page page)> onLoad = null, bool loadAsync = true, string pageId = null)
