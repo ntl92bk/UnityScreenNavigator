@@ -426,6 +426,12 @@ namespace UnityScreenNavigator.Runtime.Core.Modal
 
         private IEnumerator PopRoutine(bool playAnimation, int popCount = 1)
         {
+            if (_orderedModalIds.Count == 0)
+            {
+                // throw new InvalidOperationException("Cannot transition because the modal count is 0.");
+                yield break;
+            }
+        
             if (_orderedModalIds.Count < popCount)
                 throw new InvalidOperationException(
                     "Cannot transition because the modal count is less than the pop count.");
